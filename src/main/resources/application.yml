@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: photos_manager_server
+  config:
+    import: classpath:media-manager.properties
+
+
