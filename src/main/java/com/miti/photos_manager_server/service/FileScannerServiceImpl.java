@@ -43,17 +43,27 @@ public class FileScannerServiceImpl implements FileScannerService {
     private static final List<String> organizedArchiveFiles = new ArrayList<>();
     private static final List<String> duplicatedArchiveFiles = new ArrayList<>();
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() -1);
-
     @Override
     public void scanAndOrganizeFiles(String scanDirectory) throws IOException {
         log.info("Starting scan of directory: {}", scanDirectory);
+
+        fileHashes.clear();
+        organizedPhotoVideoFiles.clear();
+        duplicatedPhotoVideoFiles.clear();
+        organizedAudioFiles.clear();
+        duplicatedAudioFiles.clear();
+        organizedContainerFiles.clear();
+        duplicatedContainerFiles.clear();
+        organizedArchiveFiles.clear();
+        duplicatedArchiveFiles.clear();
+
         var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(scanDirectory);
         final long[] executionPercent = {0};
 
         long startTime = System.nanoTime();
         final long[] processedFiles = {0};
 
+        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() -1);
         try {
             Files.walkFileTree(Paths.get(scanDirectory),
                     new SimpleFileVisitor<>() {
@@ -83,17 +93,26 @@ public class FileScannerServiceImpl implements FileScannerService {
                         }
                     });
 
-            executorService.shutdown();
-            executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
-
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             log.error("Error scanning files: ", e);
             Thread.currentThread().interrupt();
+        } finally {
+            try {
+                executorService.shutdown();
+                if (!executorService.awaitTermination(10, TimeUnit.MINUTES)) {
+                    log.warn("Forcing shutdown as tasks did not finish in time");
+                    executorService.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                log.error("Executor termination interrupted", e);
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
 
         long endTime = System.nanoTime();
         long totalDuration = (endTime - startTime) / 1_000_000; // ms
-        log.info("Completed processing {} files in {} sec", processedFiles[0], formatMilliseconds(totalDuration));
+        log.info("Completed processing {} files in {}", processedFiles[0], formatMilliseconds(totalDuration));
     }
 
     @Override
