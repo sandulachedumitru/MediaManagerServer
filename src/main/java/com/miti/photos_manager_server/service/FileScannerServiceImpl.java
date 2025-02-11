@@ -3,6 +3,7 @@ package com.miti.photos_manager_server.service;
 import com.miti.photos_manager_server.config.MediaManagerConfig;
 import com.miti.photos_manager_server.model.FileType;
 import com.miti.photos_manager_server.model.MediaCurrentPath;
+import com.miti.photos_manager_server.model.ScanRequestDto;
 import com.miti.photos_manager_server.utils.HashUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.time.format.TextStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +34,7 @@ import java.util.stream.Collectors;
 public class FileScannerServiceImpl implements FileScannerService {
 
     private final MediaManagerConfig config;
-    private final Map<String, Path> fileHashes = new HashMap<>();
+    private final Map<String, Path> fileHashes = new ConcurrentHashMap<>();
 
     private static final List<String> organizedPhotoVideoFiles = new ArrayList<>();
     private static final List<String> duplicatedPhotoVideoFiles = new ArrayList<>();
@@ -44,8 +46,10 @@ public class FileScannerServiceImpl implements FileScannerService {
     private static final List<String> duplicatedArchiveFiles = new ArrayList<>();
 
     @Override
-    public void scanAndOrganizeFiles(String scanDirectory) throws IOException {
-        log.info("Starting scan of directory: {}", scanDirectory);
+    public void scanAndOrganizeFiles(ScanRequestDto requestDto) throws IOException {
+        config.config(requestDto);
+
+        log.info("Starting scan of directory: {}", config.getScanPath());
 
         fileHashes.clear();
         organizedPhotoVideoFiles.clear();
@@ -57,7 +61,7 @@ public class FileScannerServiceImpl implements FileScannerService {
         organizedArchiveFiles.clear();
         duplicatedArchiveFiles.clear();
 
-        var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(scanDirectory);
+        var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(config.getScanPath());
         final long[] executionPercent = {0};
 
         long startTime = System.nanoTime();
@@ -65,7 +69,7 @@ public class FileScannerServiceImpl implements FileScannerService {
 
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() -1);
         try {
-            Files.walkFileTree(Paths.get(scanDirectory),
+            Files.walkFileTree(Paths.get(config.getScanPath()),
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
@@ -145,14 +149,16 @@ public class FileScannerServiceImpl implements FileScannerService {
         try {
             String fileHash = HashUtils.computeFileHash(file);
 
-            if (fileHashes.containsKey(fileHash)) {
-                moveToDuplicates(file, currentPath);
-            } else {
-                Path organizedPath = moveToOrganizedStructure(file, currentPath);
-                fileHashes.put(fileHash, organizedPath);
+            synchronized (fileHashes) {
+                if (fileHashes.containsKey(fileHash)) {
+                    moveToDuplicates(file, currentPath);
+                } else {
+                    Path organizedPath = moveToOrganizedStructure(file, currentPath);
+                    fileHashes.put(fileHash, organizedPath);
+                }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("ERROR computing hash for file: {}", file, e);
         }
     }
 
