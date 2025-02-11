@@ -14,7 +14,7 @@ import java.util.Map;
  */
 
 @RestController
-@RequestMapping("/api/photos")
+@RequestMapping("/api/media")
 @RequiredArgsConstructor
 public class FileScannerController {
     private final FileScannerService fileScannerService;
@@ -25,7 +25,7 @@ public class FileScannerController {
         return "Scan started with custom settings.";
     }
 
-    @GetMapping("/files")
+    @GetMapping("/media-files")
     public Map<String, List<String>> getProcessedFiles() {
         return fileScannerService.getProcessedFiles();
     }
