@@ -103,7 +103,7 @@ public class FileScannerServiceImpl implements FileScannerService {
         } finally {
             try {
                 executorService.shutdown();
-                if (!executorService.awaitTermination(10, TimeUnit.MINUTES)) {
+                if (!executorService.awaitTermination(2, TimeUnit.HOURS)) {
                     log.warn("Forcing shutdown as tasks did not finish in time");
                     executorService.shutdownNow();
                 }

@@ -11,7 +11,8 @@ import java.security.NoSuchAlgorithmException;
  */
 
 public class HashUtils {
-    private static final int BUFFER_SIZE = 8192; // 8KB buffer
+//    private static final int BUFFER_SIZE = 8192; // 8 KB buffer
+    private static final int BUFFER_SIZE = 262144; // 256 KB buffer
 
     public static String computeFileHash(Path file) throws IOException {
         try (FileInputStream fis = new FileInputStream(file.toFile())) {
