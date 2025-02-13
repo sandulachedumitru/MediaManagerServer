@@ -13,4 +13,5 @@ import java.util.Map;
 public interface FileScannerService {
     void scanAndOrganizeFiles(ScanRequestDto requestDto) throws IOException;
     Map<String, List<String>> getProcessedFiles();
+    void abortScan();
 }

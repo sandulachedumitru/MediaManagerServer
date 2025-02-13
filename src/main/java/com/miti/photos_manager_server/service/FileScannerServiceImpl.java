@@ -36,6 +36,8 @@ public class FileScannerServiceImpl implements FileScannerService {
 
     private final MediaManagerConfig config;
     private final Map<String, Path> fileHashes = new ConcurrentHashMap<>();
+    private final ProgressServiceSSE progressServiceSSE;
+    private volatile boolean isAborted = false;
 
     private static final List<String> organizedPhotoVideoFiles = new ArrayList<>();
     private static final List<String> duplicatedPhotoVideoFiles = new ArrayList<>();
@@ -65,9 +67,9 @@ public class FileScannerServiceImpl implements FileScannerService {
         long startTime = System.nanoTime();
 
         var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(config.getScanPath());
-        AtomicLong executionPercent = new AtomicLong(0L);
         AtomicLong scannedFiles = new AtomicLong(0L);
         AtomicLong processedFiles = new AtomicLong(0L);
+        AtomicLong combinedProgress = new AtomicLong(0L);
 
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() -1);
         try {
@@ -75,22 +77,30 @@ public class FileScannerServiceImpl implements FileScannerService {
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                            if (isAborted) {return FileVisitResult.TERMINATE;}
                             if (Files.isRegularFile(file)) {
+                                scannedFiles.incrementAndGet();
+
                                 getFileType(file).ifPresent(currentPath -> executorService.submit(() -> {
                                     long fileStartTime = System.nanoTime();
 
-//                                    processFile(file, currentPath);
+                                    processFile(file, currentPath);
 
                                     long fileEndTime = System.nanoTime();
                                     long fileDuration = (fileEndTime - fileStartTime) / 1_000_000; // ms
 
                                     processedFiles.incrementAndGet();
-                                    executionPercent.set(scannedFiles.get() * 100 / totalDirectoriesAndFiles.filesCount);
+                                    long newProgress = (scannedFiles.get() + processedFiles.get()) * 100 / (2 * totalDirectoriesAndFiles.filesCount);
+                                    if (newProgress != combinedProgress.get()) {
+                                        combinedProgress.set(newProgress);
+                                        progressServiceSSE.sendProgressUpdate(newProgress);
+                                    }
 
-                                    log.info("Processed {} in {} ms -> {}%", file.getFileName(), fileDuration, executionPercent);
+                                    log.info("Processed {} in {} ms -> {}%", file.getFileName(), fileDuration, newProgress);
+
                                 }));
                             }
-                            scannedFiles.incrementAndGet();
+
                             return FileVisitResult.CONTINUE;
                         }
                     });
@@ -101,7 +111,7 @@ public class FileScannerServiceImpl implements FileScannerService {
         } finally {
             try {
                 executorService.shutdown();
-                if (!executorService.awaitTermination(2, TimeUnit.HOURS)) {
+                if (!executorService.awaitTermination(1, TimeUnit.DAYS)) {
                     log.warn("Forcing shutdown as tasks did not finish in time");
                     executorService.shutdownNow();
                 }
@@ -114,7 +124,14 @@ public class FileScannerServiceImpl implements FileScannerService {
 
         long endTime = System.nanoTime();
         long totalDuration = (endTime - startTime) / 1_000_000; // ms
-        log.info("Completed processing {} files in {} -> {}%", processedFiles.get(), formatMilliseconds(totalDuration), executionPercent.get());
+        combinedProgress.set(100);
+        progressServiceSSE.sendProgressUpdate(combinedProgress.get());
+        log.info("Completed processing {} files in {} -> {}%", processedFiles.get(), formatMilliseconds(totalDuration), combinedProgress.get());
+    }
+
+    @Override
+    public void abortScan() {
+        isAborted = true;
     }
 
     @Override
