@@ -54,6 +54,7 @@ public class FileScannerServiceImpl implements FileScannerService {
 
         log.info("Starting scan of directory: {}", config.getScanPath());
 
+        isAborted = false;
         fileHashes.clear();
         organizedPhotoVideoFiles.clear();
         duplicatedPhotoVideoFiles.clear();
@@ -77,11 +78,19 @@ public class FileScannerServiceImpl implements FileScannerService {
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                            if (isAborted) {return FileVisitResult.TERMINATE;}
+                            if (isAborted) {
+                                log.error("Aborting scan: waiting for all threads to stop...");
+                                return FileVisitResult.TERMINATE;
+                            }
                             if (Files.isRegularFile(file)) {
                                 scannedFiles.incrementAndGet();
 
                                 getFileType(file).ifPresent(currentPath -> executorService.submit(() -> {
+                                    if (isAborted) {
+                                        log.error("Thread Aborting scan !");
+                                        return;
+                                    }
+
                                     long fileStartTime = System.nanoTime();
 
                                     processFile(file, currentPath);
@@ -131,6 +140,7 @@ public class FileScannerServiceImpl implements FileScannerService {
 
     @Override
     public void abortScan() {
+        log.error("ABORTING SCAN !");
         isAborted = true;
     }
 
@@ -161,6 +171,11 @@ public class FileScannerServiceImpl implements FileScannerService {
     }
 
     private void processFile(Path file, MediaCurrentPath currentPath) {
+        if (isAborted) {
+            log.error("Aborting file processing !");
+            return;
+        }
+
         try {
             String fileHash = HashUtils.computeFileHash_XXHash(file);
 

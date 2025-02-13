@@ -38,7 +38,7 @@ public class FileScannerController {
         return progressServiceSSE.addEEmitter();
     }
 
-    @GetMapping("/progress/abort")
+    @PostMapping("/progress/abort")
     public void abortScan() {
         fileScannerService.abortScan();
     }
