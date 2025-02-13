@@ -147,7 +147,7 @@ public class FileScannerServiceImpl implements FileScannerService {
 
     private void processFile(Path file, MediaCurrentPath currentPath) {
         try {
-            String fileHash = HashUtils.computeFileHash_SHA256(file);
+            String fileHash = HashUtils.computeFileHash_XXHash(file);
 
             synchronized (fileHashes) {
                 if (fileHashes.containsKey(fileHash)) {
