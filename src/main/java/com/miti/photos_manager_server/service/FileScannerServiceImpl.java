@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -61,11 +62,12 @@ public class FileScannerServiceImpl implements FileScannerService {
         organizedArchiveFiles.clear();
         duplicatedArchiveFiles.clear();
 
-        var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(config.getScanPath());
-        final long[] executionPercent = {0};
-
         long startTime = System.nanoTime();
-        final long[] processedFiles = {0};
+
+        var totalDirectoriesAndFiles = getTotalDirectoriesAndFilesToScan(config.getScanPath());
+        AtomicLong executionPercent = new AtomicLong(0L);
+        AtomicLong scannedFiles = new AtomicLong(0L);
+        AtomicLong processedFiles = new AtomicLong(0L);
 
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() -1);
         try {
@@ -77,22 +79,18 @@ public class FileScannerServiceImpl implements FileScannerService {
                                 getFileType(file).ifPresent(currentPath -> executorService.submit(() -> {
                                     long fileStartTime = System.nanoTime();
 
-                                    processFile(file, currentPath);
+//                                    processFile(file, currentPath);
 
                                     long fileEndTime = System.nanoTime();
                                     long fileDuration = (fileEndTime - fileStartTime) / 1_000_000; // ms
 
-                                    synchronized (processedFiles) {
-                                        processedFiles[0]++;
-                                    }
+                                    processedFiles.incrementAndGet();
+                                    executionPercent.set(scannedFiles.get() * 100 / totalDirectoriesAndFiles.filesCount);
 
-                                    synchronized (executionPercent) {
-                                        executionPercent[0] = processedFiles[0] * 100 / totalDirectoriesAndFiles.filesCount;
-                                    }
-
-                                    log.info("Processed {} in {} ms -> {}%", file.getFileName(), fileDuration, executionPercent[0]);
+                                    log.info("Processed {} in {} ms -> {}%", file.getFileName(), fileDuration, executionPercent);
                                 }));
                             }
+                            scannedFiles.incrementAndGet();
                             return FileVisitResult.CONTINUE;
                         }
                     });
@@ -116,7 +114,7 @@ public class FileScannerServiceImpl implements FileScannerService {
 
         long endTime = System.nanoTime();
         long totalDuration = (endTime - startTime) / 1_000_000; // ms
-        log.info("Completed processing {} files in {}", processedFiles[0], formatMilliseconds(totalDuration));
+        log.info("Completed processing {} files in {} -> {}%", processedFiles.get(), formatMilliseconds(totalDuration), executionPercent.get());
     }
 
     @Override
